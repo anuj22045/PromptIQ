@@ -95,11 +95,22 @@ clarity = GEval(
     name="Clarity",
 
     criteria="""
-    Evaluate whether the generated response is
-    clear, understandable and well-structured
+        Evaluate whether the generated response is clear,
+        understandable and well-structured.
 
-    check language simplicity, logical flow,
-    readability and explanation quality.
+        Check:
+        1. Language simplicity.
+        2. Logical flow.
+        3. Readability.
+        4. Proper sentence construction.
+        5. Clear transitions between ideas.
+        6. Whether the response ends naturally.
+
+        Penalize unfinished sentences, abrupt cutoffs
+        and confusing explanations.
+
+        Do not penalize missing subject matter details
+        under clarity; evaluate those under completeness.
     """,
 
     evaluation_params=[

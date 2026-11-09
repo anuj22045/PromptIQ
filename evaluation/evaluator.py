@@ -30,8 +30,19 @@ If no context is supplied, return a null score.
 Do not invent a faithfulness score.
 
 4. Clarity:
-Check whether the response is understandable,
+Evaluate whether the response is understandable,
 well-structured and easy to follow.
+
+Check:
+- Language simplicity
+- Logical flow
+- Readability
+- Proper sentence construction
+- Clear transitions between ideas
+- Whether the response ends naturally
+
+Penalize responses that contain unfinished sentences,
+abrupt cutoffs, confusing explanations or poor structure.
 
 5. Completeness:
 Check whether the response covers all the
@@ -109,7 +120,7 @@ def evaluate_response(prompt:str, response:str, reference_answer:str=None, conte
     ]
     #Ask judge LLM to evaluate
     judge_output = generate_chat_response(
-        messages, temperature=0, max_completion_tokens=1500 
+        messages, temperature=0, max_completion_tokens=1500, json_mode = True
     )
 
     try:

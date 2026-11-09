@@ -4,19 +4,26 @@ from config.settings import GROQ_API_KEY, GROQ_MODEL
 client = Groq(api_key = GROQ_API_KEY)
 
 
-def generate_chat_response(messages:list, temperature: float=0.2, max_completion_tokens: int=1200) ->str:
-    response = client.chat.completions.create(
-        model = GROQ_MODEL,
-        messages = messages,
-        temperature=temperature,
-        max_completion_tokens = max_completion_tokens,
-        response_format= {"type": "json_object"}
-    )
+def generate_chat_response(messages:list, temperature: float=0.2, max_completion_tokens: int=1200, json_mode: bool = False) ->str:
+
+    request_args = {
+        "model": GROQ_MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "max_completion_tokens": max_completion_tokens
+    }
+
+    if json_mode:
+        request_args["response_format"] = {
+            "type" : "json_object"
+        }
+
+    response = client.chat.completions.create(**request_args)
 
     content = response.choices[0].message.content
 
     if not content:
-        raise RuntimeError("LLM return an empty response")
+        raise RuntimeError("LLM returned an empty response")
 
     return content
 
@@ -32,7 +39,7 @@ def generate_response(prompt: str)->str:
     return generate_chat_response(
         messages, 
         temperature=0.7,
-        max_completion_tokens=512
+        max_completion_tokens=1500
     )
 
 

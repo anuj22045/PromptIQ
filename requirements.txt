@@ -1,0 +1,8 @@
+groq
+python-dotenv
+streamlit
+deepeval
+pandas
+plotly
+pydantic
+pytest

@@ -75,9 +75,8 @@ with st.expander("Advanced Evaluation Inputs (Optional)"):
     )
 
 
-# ----------------------------------
 # GENERATE AND EVALUATE
-# ----------------------------------
+
 
 if st.button("🚀 Generate & Evaluate", type="primary"):
 

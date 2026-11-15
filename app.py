@@ -1,13 +1,16 @@
 
 import streamlit as st
 
+from ambiguity.detector import detect_ambiguity
+from ambiguity.clarifier import resolve_intent
+
 from core.response_generator import generate_llm_response
 from evaluation.evaluation_service import run_full_evaluation
 
 
-# ----------------------------------
+# ==========================================
 # PAGE CONFIGURATION
-# ----------------------------------
+# ==========================================
 
 st.set_page_config(
     page_title="PromptIQ",
@@ -16,23 +19,82 @@ st.set_page_config(
 )
 
 
-# ----------------------------------
-# SESSION STATE
-# ----------------------------------
+# ==========================================
+# SESSION STATE INITIALIZATION
+# ==========================================
 
-if "prompt" not in st.session_state:
-    st.session_state.prompt = ""
+defaults = {
+    "ambiguity_result": None,
+    "analyzed_prompt": None,
+    "clarification_result": None,
+    "generated_response": None,
+    "evaluation_result": None,
+    "result_original_prompt": None,
+    "execution_prompt": None,
+    "reference_answer": "",
+    "supporting_context": "",
+    "pipeline_error": None
+}
 
-if "response" not in st.session_state:
-    st.session_state.response = None
-
-if "evaluation" not in st.session_state:
-    st.session_state.evaluation = None
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
 
-# ----------------------------------
-# HEADER
-# ----------------------------------
+# ==========================================
+# HELPER: GENERATE AND EVALUATE
+# ==========================================
+
+def generate_and_evaluate(
+    original_prompt,
+    execution_prompt,
+    reference_answer=None,
+    context=None,
+    clarification_result=None
+):
+
+    # Reset previous results
+    st.session_state.generated_response = None
+    st.session_state.evaluation_result = None
+    st.session_state.pipeline_error = None
+
+    st.session_state.result_original_prompt = original_prompt
+    st.session_state.execution_prompt = execution_prompt
+    st.session_state.clarification_result = clarification_result
+
+    try:
+
+        # STEP 1: Generate response
+        with st.spinner("Generating LLM response..."):
+
+            response = generate_llm_response(
+                execution_prompt
+            )
+
+        st.session_state.generated_response = response
+
+        # STEP 2: Evaluate response
+        with st.spinner(
+            "Evaluating response using Custom Judge and DeepEval..."
+        ):
+
+            evaluation = run_full_evaluation(
+                prompt=execution_prompt,
+                response=response,
+                reference_answer=reference_answer,
+                context=context
+            )
+
+        st.session_state.evaluation_result = evaluation
+
+    except Exception as e:
+
+        st.session_state.pipeline_error = str(e)
+
+
+# ==========================================
+# APPLICATION HEADER
+# ==========================================
 
 st.title("🧠 PromptIQ")
 
@@ -41,44 +103,54 @@ st.subheader(
 )
 
 st.write(
-    "Generate AI responses and evaluate their quality "
-    "using Custom LLM-as-a-Judge and DeepEval."
+    "Generate AI responses, detect prompt ambiguity, "
+    "clarify user intent and evaluate response quality."
 )
 
 st.divider()
 
 
-# ----------------------------------
-# USER INPUT
-# ----------------------------------
+# ==========================================
+# USER PROMPT INPUT
+# ==========================================
 
 st.header("✍️ Enter Your Prompt")
 
 user_prompt = st.text_area(
     "Your Prompt",
-    placeholder="Example: Explain RAG in AI with a practical example...",
-    height=130
+    placeholder="Example: What is LLD?",
+    height=130,
+    key="user_prompt"
 )
 
 
-# Optional reference answer and context
+# ==========================================
+# OPTIONAL EVALUATION INPUTS
+# ==========================================
+
 with st.expander("Advanced Evaluation Inputs (Optional)"):
 
     reference_answer = st.text_area(
         "Reference Answer",
-        placeholder="Enter the expected answer if available..."
+        placeholder="Enter the expected answer if available...",
+        key="reference_answer"
     )
 
-    context = st.text_area(
+    supporting_context = st.text_area(
         "Supporting Context",
-        placeholder="Enter supporting information or source context..."
+        placeholder="Enter supporting information...",
+        key="supporting_context"
     )
 
 
-# GENERATE AND EVALUATE
+# ==========================================
+# ANALYZE PROMPT BUTTON
+# ==========================================
 
-
-if st.button("🚀 Generate & Evaluate", type="primary"):
+if st.button(
+    "🔍 Analyze Prompt",
+    type="primary"
+):
 
     if not user_prompt.strip():
 
@@ -86,74 +158,276 @@ if st.button("🚀 Generate & Evaluate", type="primary"):
 
     else:
 
-        # Clear previous results
-        st.session_state.prompt = user_prompt
-        st.session_state.response = None
-        st.session_state.evaluation = None
+        # Clear previous workflow
+        st.session_state.ambiguity_result = None
+        st.session_state.analyzed_prompt = None
+        st.session_state.clarification_result = None
+        st.session_state.generated_response = None
+        st.session_state.evaluation_result = None
+        st.session_state.pipeline_error = None
+
+        # st.session_state.reference_answer = reference_answer
+        # st.session_state.supporting_context = supporting_context
 
         try:
 
-            # STEP 1: Generate response
-            with st.spinner("Generating LLM response..."):
+            # Run ambiguity detection
+            with st.spinner("Analyzing prompt ambiguity..."):
 
-                response = generate_llm_response(user_prompt)
-
-            st.session_state.response = response
-
-            # STEP 2: Evaluate response
-            with st.spinner(
-                "Running Custom Judge and DeepEval..."
-            ):
-
-                evaluation = run_full_evaluation(
-                    prompt=user_prompt,
-                    response=response,
-                    reference_answer=reference_answer or None,
-                    context=context or None
+                ambiguity_result = detect_ambiguity(
+                    prompt=user_prompt
                 )
 
-            st.session_state.evaluation = evaluation
+            st.session_state.ambiguity_result = ambiguity_result
+            st.session_state.analyzed_prompt = user_prompt
+
+            # If clarification is not required,
+            # directly generate and evaluate
+            if not ambiguity_result.needs_clarification:
+
+                generate_and_evaluate(
+                    original_prompt=user_prompt,
+                    execution_prompt=user_prompt,
+                    reference_answer=reference_answer or None,
+                    context=supporting_context or None
+                )
 
         except Exception as e:
 
-            st.error(f"Application error: {e}")
+            st.session_state.pipeline_error = str(e)
 
 
-# ----------------------------------
-# DISPLAY ORIGINAL RESPONSE
-# ----------------------------------
+# ==========================================
+# DISPLAY AMBIGUITY DETECTION RESULTS
+# ==========================================
 
-if st.session_state.response:
+ambiguity_result = st.session_state.ambiguity_result
+
+if (
+    ambiguity_result is not None
+    and st.session_state.analyzed_prompt == user_prompt
+):
+
+    st.divider()
+
+    st.header("🔎 Ambiguity Detection")
+
+    if ambiguity_result.needs_clarification:
+
+        st.warning(
+            "Ambiguous prompt detected! "
+            "Please clarify your intended meaning."
+        )
+
+        st.write(
+            f"**Reason:** {ambiguity_result.reason}"
+        )
+
+        st.write(
+            f"**Ambiguity Level:** "
+            f"{ambiguity_result.ambiguity_level.title()}"
+        )
+
+        st.subheader("Possible Interpretations")
+
+        # Display available interpretations
+        for i, option in enumerate(
+            ambiguity_result.possible_interpretations,
+            start=1
+        ):
+
+            st.markdown(
+                f"**{i}. {option.title}**"
+            )
+
+            st.caption(option.description)
+
+        st.divider()
+
+        # ==================================
+        # USER CLARIFICATION
+        # ==================================
+
+        st.subheader("💬 Clarify Your Intent")
+
+        st.info(
+            ambiguity_result.clarification_question
+            or "Please select your intended meaning."
+        )
+
+        options = [
+            option.title
+            for option in ambiguity_result.possible_interpretations
+        ]
+
+        options.append("Something else")
+
+        if len(options) == 1:
+
+            st.error(
+                "No interpretation options were returned. "
+                "Please check the ambiguity detector output."
+            )
+
+        else:
+
+            selected_interpretation = st.radio(
+                "Which meaning are you referring to?",
+                options,
+                key="selected_interpretation"
+            )
+
+            custom_intent = None
+
+            if selected_interpretation == "Something else":
+
+                custom_intent = st.text_input(
+                    "Enter your intended meaning",
+                    placeholder="Example: Meta Language",
+                    key="custom_intent"
+                )
+
+            # ==================================
+            # CONFIRM INTENT
+            # ==================================
+
+            if st.button(
+                "✅ Confirm Intent & Generate Response",
+                type="primary"
+            ):
+
+                try:
+
+                    # Resolve selected user intent
+                    clarification_result = resolve_intent(
+                        original_prompt=user_prompt,
+                        ambiguity_result=ambiguity_result,
+                        selected_interpretation=selected_interpretation,
+                        custom_intent=custom_intent
+                    )
+
+                    # Store and execute clarified prompt
+                    st.session_state.clarification_result = (
+                        clarification_result
+                    )
+
+                    generate_and_evaluate(
+                        original_prompt=user_prompt,
+                        execution_prompt=clarification_result.clarified_prompt,
+                        reference_answer=reference_answer or None,
+                        context=supporting_context or None,
+                        clarification_result=clarification_result
+                    )
+
+                except Exception as e:
+
+                    st.error(
+                        f"Clarification error: {e}"
+                    )
+
+    else:
+
+        st.success(
+            "No clarification required. "
+            "Your prompt is sufficiently clear."
+        )
+
+        st.write(
+            f"**Reason:** {ambiguity_result.reason}"
+        )
+
+
+# ==========================================
+# DISPLAY PIPELINE ERRORS
+# ==========================================
+
+if st.session_state.pipeline_error:
+
+    st.error(
+        f"Application error: {st.session_state.pipeline_error}"
+    )
+
+
+# ==========================================
+# DISPLAY CLARIFICATION RESULT
+# ==========================================
+
+if (
+    st.session_state.clarification_result is not None
+    and st.session_state.result_original_prompt == user_prompt
+):
+
+    clarification = st.session_state.clarification_result
+
+    st.divider()
+
+    st.header("🎯 Intent Resolution")
+
+    st.success(
+        f"Selected Intent: {clarification.selected_intent}"
+    )
+
+    st.write("**Original Prompt:**")
+    st.info(clarification.original_prompt)
+
+    st.write("**Clarified Prompt:**")
+
+    st.code(
+        clarification.clarified_prompt,
+        language="text"
+    )
+
+
+# ==========================================
+# DISPLAY GENERATED RESPONSE
+# ==========================================
+
+if (
+    st.session_state.generated_response
+    and st.session_state.result_original_prompt == user_prompt
+):
 
     st.divider()
 
     st.header("📝 Generated Response")
 
-    st.subheader("Original Prompt")
+    st.write("**Original User Prompt:**")
 
-    st.info(st.session_state.prompt)
+    st.info(st.session_state.result_original_prompt)
+
+    st.write("**Prompt Sent to LLM:**")
+
+    st.code(
+        st.session_state.execution_prompt,
+        language="text"
+    )
 
     st.subheader("LLM Response")
 
-    st.markdown(st.session_state.response)
+    st.markdown(
+        st.session_state.generated_response
+    )
 
 
-# ----------------------------------
-# DISPLAY EVALUATION RESULTS
-# ----------------------------------
+# ==========================================
+# DISPLAY EVALUATION DASHBOARD
+# ==========================================
 
-if st.session_state.evaluation:
+if (
+    st.session_state.evaluation_result
+    and st.session_state.result_original_prompt == user_prompt
+):
 
-    evaluation = st.session_state.evaluation
+    evaluation = st.session_state.evaluation_result
 
     st.divider()
 
     st.header("📊 Evaluation Dashboard")
 
 
-    # ==================================
+    # ======================================
     # CUSTOM LLM-AS-A-JUDGE
-    # ==================================
+    # ======================================
 
     st.subheader("1. Custom LLM-as-a-Judge")
 
@@ -182,11 +456,14 @@ if st.session_state.evaluation:
                 score = metric["score"]
 
                 if score is not None:
+
                     st.metric(
                         metric_name.title(),
                         f"{score}/10"
                     )
+
                 else:
+
                     st.metric(
                         metric_name.title(),
                         "N/A"
@@ -200,12 +477,11 @@ if st.session_state.evaluation:
 
             with st.expander(metric_name.title()):
 
-                if metric["score"] is not None:
-                    st.write(
-                        f"Score: {metric['score']}/10"
-                    )
-                else:
-                    st.write("Score: N/A")
+                st.write(
+                    f"Score: {metric['score']}/10"
+                    if metric["score"] is not None
+                    else "Score: N/A"
+                )
 
                 st.write(metric["reason"])
 
@@ -216,10 +492,12 @@ if st.session_state.evaluation:
                     for weakness in metric["weaknesses"]:
                         st.write(f"- {weakness}")
 
-        st.info(
-            f"Overall Custom Judge Score: "
-            f"{custom_data['overall_score']}/10"
-        )
+        if custom_data["overall_score"] is not None:
+
+            st.info(
+                f"Overall Custom Judge Score: "
+                f"{custom_data['overall_score']}/10"
+            )
 
     else:
 
@@ -232,9 +510,9 @@ if st.session_state.evaluation:
         )
 
 
-    # ==================================
-    # DEEPEVAL
-    # ==================================
+    # ======================================
+    # DEEPEVAL G-EVAL
+    # ======================================
 
     st.divider()
 
@@ -244,13 +522,13 @@ if st.session_state.evaluation:
 
     if deepeval_results:
 
-        deepeval_columns = st.columns(3)
+        columns = st.columns(3)
 
         for i, (metric_name, details) in enumerate(
             deepeval_results.items()
         ):
 
-            with deepeval_columns[i]:
+            with columns[i]:
 
                 st.metric(
                     metric_name,
@@ -263,6 +541,7 @@ if st.session_state.evaluation:
                     st.error("Failed")
 
                 with st.expander("View Explanation"):
+
                     st.write(details["reason"])
 
     else:
@@ -275,25 +554,21 @@ if st.session_state.evaluation:
             )
         )
 
-
-    # ==================================
-    # ERRORS
-    # ==================================
-
+    # Display independent evaluator errors
     if evaluation["errors"]:
 
-        st.divider()
-
-        st.warning("Some evaluation components encountered errors.")
+        st.warning(
+            "One or more evaluation engines encountered errors."
+        )
 
         for component, error in evaluation["errors"].items():
 
             st.write(f"**{component}:** {error}")
 
 
-# ----------------------------------
+# ==========================================
 # FOOTER
-# ----------------------------------
+# ==========================================
 
 st.divider()
 

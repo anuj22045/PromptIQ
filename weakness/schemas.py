@@ -33,4 +33,3 @@ class WeaknessAnalysisResult(BaseModel):
         default_factory=list
     )
     summary:str
-

@@ -178,23 +178,21 @@ def analyze_weaknesses(evaluation_results):
     needs_deeper_analysis = (
         has_low_scores or has_explicit_weaknesses
     )
-
     # =====================================
     # 4. DETERMINE ANALYSIS STATUS
     # =====================================
 
     has_evaluation_data = bool(metric_feedback)
 
-    if not has_evaluation_data:
+    if not has_evaluation_data or errors:
 
         analysis_status = "insufficient_evaluation_data"
 
         summary = (
-            "Evaluation data is unavailable. "
-            "Weakness analysis cannot be completed."
+            "Evaluation data is incomplete or unavailable. "
+            "The analysis cannot confidently classify "
+            "the response as satisfactory."
         )
-
-        needs_deeper_analysis = False
 
     elif needs_deeper_analysis:
 

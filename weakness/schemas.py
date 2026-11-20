@@ -8,7 +8,7 @@ class LowScoreFinding(BaseModel):
     threshold:float
     reason:str
 
-class metricFeedbaack(BaseModel):
+class MetricFeedback(BaseModel):
     evaluator: str
     metric: str
     score_out_of_10: float | None=None

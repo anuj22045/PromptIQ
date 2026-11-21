@@ -5,6 +5,14 @@ from weakness.schemas import (
     WeaknessAnalysisResult
 )
 
+import json
+import os
+
+from groq import Groq
+from dotenv import load_dotenv
+load_dotenv()
+
+from weakness.schemas import DeeperWeaknessResult
 
 # ---------------------------------------
 # CONFIGURATION
@@ -29,7 +37,7 @@ def convert_to_dict(result):
         return result
 
     raise TypeError("Unsupported evaluation result format.")
- 
+
 
 def normalize_score(value):
 
@@ -60,6 +68,7 @@ def analyze_weaknesses(evaluation_results):
     existing_weaknesses = []
 
     metric_feedback = []
+
 
     # =====================================
     # 1. CUSTOM LLM-AS-A-JUDGE ANALYSIS
@@ -234,3 +243,144 @@ def analyze_weaknesses(evaluation_results):
 
         summary=summary
     )
+
+
+
+# =====================================
+# PHASE 5B - DEEPER WEAKNESS ANALYSIS
+# =====================================
+
+def analyze_deeper_weaknesses(
+    prompt,
+    response,
+    phase5a_result
+):
+
+    # Convert Phase 5A result into dictionary
+    phase5a_data = convert_to_dict(phase5a_result)
+
+    # Do not call Groq if Phase 5A found no weaknesses
+    if phase5a_data.get("analysis_status") == "satisfactory":
+
+        return DeeperWeaknessResult(
+            needs_refinement=False,
+            overall_status="satisfactory",
+            requirement_checks=[],
+            identified_weaknesses=[],
+            missing_requirements=[],
+            recommendations=[],
+            summary=(
+                "No significant weaknesses were detected "
+                "during the initial evaluation."
+            )
+        )
+
+    # Never classify incomplete evaluation data as satisfactory
+    if phase5a_data.get("analysis_status") == "insufficient_evaluation_data":
+        raise ValueError(
+            "Phase 5A evaluation data is insufficient."
+            "Deeper analysis cannot proceed reliably."
+        )
+
+    if not prompt or not prompt.strip():
+        raise ValueError("Prompt cannot be empty.")
+
+    if not response or not response.strip():
+        raise ValueError("Generated response cannot be empty.")
+
+    client = Groq(api_key=os.environ["GROQ_API_KEY"])
+
+    system_instruction = """
+You are an expert LLM response quality analyst.
+
+Your task is to compare the user's original or clarified
+prompt with the generated response.
+
+Follow these rules strictly:
+
+1. Identify the actual requirements in the user's prompt.
+2. Check whether each requirement is fulfilled.
+3. Identify genuinely missing or incomplete information.
+4. Validate weaknesses reported by previous evaluators.
+5. Do not blindly accept previous evaluator weaknesses.
+6. Do not invent additional requirements.
+7. Do not recommend making the response longer unless needed.
+8. Do not recommend unrelated examples, diagrams,
+   advantages, disadvantages, or extra explanations.
+9. If the response satisfies the prompt, return no weaknesses.
+10. Recommend improvements only for genuine problems.
+11. Distinguish response quality from prompt quality.
+12. Set needs_refinement to true only when changing the
+    prompt itself is justified. A missing response requirement
+    does not automatically mean the prompt is defective.
+
+Return only a valid JSON object with these fields:
+
+{
+    "needs_refinement": false,
+    "overall_status": "satisfactory",
+    "requirement_checks": [
+        {
+            "requirement": "string",
+            "status": "fulfilled",
+            "explanation": "string"
+        }
+    ],
+    "identified_weaknesses": [],
+    "missing_requirements": [],
+    "recommendations": [],
+    "summary": "string"
+}
+
+Allowed overall_status values:
+- satisfactory
+- needs_improvement
+
+Allowed requirement status values:
+- fulfilled
+- partially_fulfilled
+- missing
+
+Use needs_improvement when the response has genuine problems.
+
+Use satisfactory when the response fulfills the user's request.
+
+Use needs_refinement only when improving the original prompt
+would be justified, not merely because the response is poor.
+"""
+
+    user_content = (
+        "USER PROMPT:\n"
+        f"{prompt}\n\n"
+        "GENERATED RESPONSE:\n"
+        f"{response}\n\n"
+        "PHASE 5A FINDINGS:\n"
+        f"{json.dumps(phase5a_data, indent=2)}"
+    )
+
+    completion = client.chat.completions.create(
+        model="openai/gpt-oss-120b",
+        messages=[
+            {
+                "role": "system",
+                "content": system_instruction
+            },
+            {
+                "role": "user",
+                "content": user_content
+            }
+        ],
+        temperature=0,
+        response_format={"type": "json_object"}
+    )
+
+    result_text = completion.choices[0].message.content
+
+    if not result_text:
+        raise ValueError("Groq returned an empty analysis.")
+
+    result_data = json.loads(result_text)
+
+    result = DeeperWeaknessResult.model_validate(result_data)
+
+    return result

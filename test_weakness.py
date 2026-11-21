@@ -1,4 +1,4 @@
-
+from weakness.analyzer import analyze_deeper_weaknesses
 from weakness.analyzer import analyze_weaknesses
 
 
@@ -215,3 +215,153 @@ assert poor_result.needs_deeper_analysis is True
 assert poor_result.analysis_status == "needs_deeper_analysis"
 
 print("\nAll Phase 5A tests passed!")
+
+
+
+
+# =====================================
+# PHASE 5B - TESTING
+# =====================================
+
+def test_deeper_analysis(title, prompt, response, evaluation):
+
+    print("\n====================================")
+    print(title)
+    print("====================================")
+
+    # Phase 5A: Identify potential weaknesses
+    phase5a_result = analyze_weaknesses(evaluation)
+
+    # Phase 5B: Verify weaknesses using Groq
+    result = analyze_deeper_weaknesses(
+        prompt=prompt,
+        response=response,
+        phase5a_result=phase5a_result
+    )
+
+    print("\nOverall Status:")
+    print(result.overall_status)
+
+    print("\nNeeds Refinement:")
+    print(result.needs_refinement)
+
+    print("\nRequirement Checks:")
+    for item in result.requirement_checks:
+        print(f"- {item.requirement}: {item.status}")
+        print(f"  Reason: {item.explanation}")
+
+    print("\nIdentified Weaknesses:")
+    for weakness in result.identified_weaknesses:
+        print("-", weakness)
+
+    print("\nMissing Requirements:")
+    for requirement in result.missing_requirements:
+        print("-", requirement)
+
+    print("\nRecommendations:")
+    for recommendation in result.recommendations:
+        print("-", recommendation)
+
+    print("\nSummary:")
+    print(result.summary)
+
+    return result
+
+
+# =====================================
+# TEST 3: GOOD RESPONSE
+# =====================================
+
+good_prompt = "Explain RAG with a practical example."
+
+good_response = """
+RAG stands for Retrieval-Augmented Generation.
+
+It retrieves relevant information from external
+sources and uses that information to generate
+a more informed response.
+
+Example:
+A student asks a university chatbot about
+admission fees.
+
+The chatbot retrieves the fee information
+from university documents and generates
+an answer using that information.
+"""
+
+good_5b_result = test_deeper_analysis(
+    "TEST 3: GOOD RESPONSE",
+    good_prompt,
+    good_response,
+    good_evaluation
+)
+
+assert good_5b_result.overall_status == "satisfactory"
+assert good_5b_result.needs_refinement is False
+assert good_5b_result.identified_weaknesses == []
+assert good_5b_result.missing_requirements == []
+
+
+# =====================================
+# TEST 4: MISSING PRACTICAL EXAMPLE
+# =====================================
+
+poor_prompt = "Explain RAG with a practical example."
+
+poor_response = """
+RAG stands for Retrieval-Augmented Generation.
+
+It combines information retrieval with
+large language models to generate answers.
+"""
+
+poor_5b_result = test_deeper_analysis(
+    "TEST 4: MISSING PRACTICAL EXAMPLE",
+    poor_prompt,
+    poor_response,
+    poor_evaluation
+)
+
+assert poor_5b_result.overall_status == "needs_improvement"
+
+assert len(poor_5b_result.missing_requirements) > 0
+
+assert len(poor_5b_result.recommendations) > 0
+
+
+# =====================================
+# TEST 5: UNNECESSARY WEAKNESS
+# =====================================
+
+# The evaluators reported a missing example,
+# but the user never requested an example.
+
+simple_prompt = "What is RAG?"
+
+simple_response = """
+RAG stands for Retrieval-Augmented Generation.
+
+It is an AI technique that retrieves relevant
+information from external sources and uses
+that information to help a language model
+generate more informed answers.
+"""
+
+unnecessary_5b_result = test_deeper_analysis(
+    "TEST 5: UNNECESSARY WEAKNESS",
+    simple_prompt,
+    simple_response,
+    poor_evaluation
+)
+
+assert unnecessary_5b_result.overall_status == "satisfactory"
+
+assert unnecessary_5b_result.needs_refinement is False
+
+assert unnecessary_5b_result.missing_requirements == []
+
+assert unnecessary_5b_result.recommendations == []
+
+
+print("\nAll Phase 5B tests passed!")

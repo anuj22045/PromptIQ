@@ -8,6 +8,14 @@ from core.response_generator import generate_llm_response
 from evaluation.evaluation_service import run_full_evaluation
 
 
+from weakness.analyzer import(
+    analyze_weaknesses,
+    analyze_deeper_weaknesses
+)
+
+
+
+
 # ==========================================
 # PAGE CONFIGURATION
 # ==========================================
@@ -33,7 +41,9 @@ defaults = {
     "execution_prompt": None,
     "reference_answer": "",
     "supporting_context": "",
-    "pipeline_error": None
+    "pipeline_error": None,
+    "weakness_result":None,
+    "deeper_weakness_result":None
 }
 
 for key, value in defaults.items():
@@ -57,6 +67,8 @@ def generate_and_evaluate(
     st.session_state.generated_response = None
     st.session_state.evaluation_result = None
     st.session_state.pipeline_error = None
+    st.session_state.weakness_result = None
+    st.session_state.deeper_weakness_result = None
 
     st.session_state.result_original_prompt = original_prompt
     st.session_state.execution_prompt = execution_prompt
@@ -86,6 +98,20 @@ def generate_and_evaluate(
             )
 
         st.session_state.evaluation_result = evaluation
+        #phase 5 A Weakness analysis
+        with st.spinner("Analyzing evaluation weaknesses..."):
+            weakness_result = analyze_weaknesses(evaluation)
+            st.session_state.weakness_result = weakness_result
+
+        #phase 5 B deeper analysis
+        if weakness_result.needs_deeper_analysis:
+            with st.spinner("Verifying weakness using Groq..."):
+                deeper_result = analyze_deeper_weaknesses(
+                    prompt = execution_prompt,
+                    response = response,
+                    phase5a_result = weakness_result 
+                )
+                st.session_state.deeper_weakness_result = deeper_result
 
     except Exception as e:
 
@@ -165,6 +191,8 @@ if st.button(
         st.session_state.generated_response = None
         st.session_state.evaluation_result = None
         st.session_state.pipeline_error = None
+        st.session_state.weakness_result = None
+        st.session_state.deeper_weakness_result = None
 
         # st.session_state.reference_answer = reference_answer
         # st.session_state.supporting_context = supporting_context
@@ -565,6 +593,147 @@ if (
 
             st.write(f"**{component}:** {error}")
 
+
+# ==========================================
+# PHASE 5 - WEAKNESS ANALYSIS REPORT
+# ==========================================
+
+if (
+    st.session_state.weakness_result is not None
+    and st.session_state.result_original_prompt == user_prompt
+):
+
+    weakness = st.session_state.weakness_result
+    deeper = st.session_state.deeper_weakness_result
+
+    st.divider()
+    st.header("🔍 Weakness Analysis Report")
+
+    # =====================================
+    # PHASE 5A - INITIAL ANALYSIS
+    # =====================================
+
+    st.subheader("1. Initial Weakness Analysis")
+
+    st.write("**Analysis Status:**", weakness.analysis_status)
+
+    st.write(
+        "**Needs Deeper Analysis:**",
+        weakness.needs_deeper_analysis
+    )
+
+    st.write("**Summary:**", weakness.summary)
+
+    # Low-scoring dimensions
+    if weakness.low_scoring_dimensions:
+
+        st.markdown("#### Low-Scoring Dimensions")
+
+        for item in weakness.low_scoring_dimensions:
+
+            st.warning(
+                f"{item.evaluator} - {item.metric}: "
+                f"{item.score_out_of_10}/10"
+            )
+
+            if item.reason:
+                st.write(item.reason)
+
+    else:
+        st.success("No low-scoring dimensions detected.")
+
+    # Existing evaluator weaknesses
+    st.markdown("#### Existing Evaluator Weaknesses")
+
+    if weakness.existing_weaknesses:
+
+        for item in weakness.existing_weaknesses:
+            st.write(f"- {item}")
+
+    else:
+        st.write("No explicit weaknesses reported.")
+
+    # =====================================
+    # PHASE 5B - DEEPER ANALYSIS
+    # =====================================
+
+    st.divider()
+    st.subheader("2. Deeper Weakness Analysis")
+
+    if deeper is not None:
+
+        st.write("**Overall Status:**", deeper.overall_status)
+
+        st.write(
+            "**Needs Prompt Refinement:**",
+            deeper.needs_refinement
+        )
+
+        st.write("**Summary:**", deeper.summary)
+
+        # Requirement checks
+        st.markdown("#### Requirement Checks")
+
+        for item in deeper.requirement_checks:
+
+            st.write(
+                f"**{item.requirement}** - {item.status}"
+            )
+
+            st.caption(item.explanation)
+
+        # Confirmed weaknesses
+        st.markdown("#### Confirmed Weaknesses")
+
+        if deeper.identified_weaknesses:
+
+            for item in deeper.identified_weaknesses:
+                st.write(f"- {item}")
+
+        else:
+            st.success("No genuine weaknesses confirmed.")
+
+        # Missing requirements
+        st.markdown("#### Missing Requirements")
+
+        if deeper.missing_requirements:
+
+            for item in deeper.missing_requirements:
+                st.write(f"- {item}")
+
+        else:
+            st.write("No missing requirements identified.")
+
+        # Recommendations
+        st.markdown("#### Improvement Recommendations")
+
+        if deeper.recommendations:
+
+            for item in deeper.recommendations:
+                st.write(f"- {item}")
+
+        else:
+            st.success("No improvements necessary.")
+
+    elif weakness.analysis_status == "satisfactory":
+
+        st.success(
+            "Initial evaluation is satisfactory. "
+            "Deeper analysis was not required."
+        )
+
+    elif weakness.analysis_status == "insufficient_evaluation_data":
+
+        st.warning(
+            "Evaluation data is insufficient. "
+            "Deeper analysis was not performed."
+        )
+
+    else:
+
+        st.warning(
+            "Deeper weakness analysis is not available."
+        )
 
 # ==========================================
 # FOOTER

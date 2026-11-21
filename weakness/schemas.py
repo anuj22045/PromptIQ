@@ -8,7 +8,7 @@ class LowScoreFinding(BaseModel):
     threshold:float
     reason:str
 
-class metricFeedbaack(BaseModel):
+class MetricFeedback(BaseModel):
     evaluator: str
     metric: str
     score_out_of_10: float | None=None
@@ -33,3 +33,46 @@ class WeaknessAnalysisResult(BaseModel):
         default_factory=list
     )
     summary:str
+
+
+
+
+# =====================================
+# PHASE 5B - DEEPER WEAKNESS ANALYSIS
+# =====================================
+
+class RequirementCheck(BaseModel):
+    requirement: str
+    status: Literal[
+        "fulfilled",
+        "partially_fulfilled",
+        "missing"
+    ]
+    explanation: str
+
+
+class DeeperWeaknessResult(BaseModel):
+    needs_refinement: bool
+
+    overall_status: Literal[
+        "satisfactory",
+        "needs_improvement"
+    ]
+
+    requirement_checks: list[RequirementCheck] = Field(
+        default_factory=list
+    )
+
+    identified_weaknesses: list[str] = Field(
+        default_factory=list
+    )
+
+    missing_requirements: list[str] = Field(
+        default_factory=list
+    )
+
+    recommendations: list[str] = Field(
+        default_factory=list
+    )
+
+    summary: str

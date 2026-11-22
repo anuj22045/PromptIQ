@@ -1,4 +1,8 @@
 
+
+#we use two weakness analysis
+# Phase 5A: Detects potential weaknesses using evaluation scores and feedback.
+# Phase 5B: Verifies whether those weaknesses are actually valid based on the user's prompt and generated response.
 from weakness.schemas import (
     LowScoreFinding,
     MetricFeedback,
@@ -13,6 +17,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from weakness.schemas import DeeperWeaknessResult
+from core.response_generator import generate_llm_response
+
+from evaluation.evaluation_service import run_full_evaluation
 
 # ---------------------------------------
 # CONFIGURATION
@@ -306,7 +313,7 @@ Follow these rules strictly:
 6. Do not invent additional requirements.
 7. Do not recommend making the response longer unless needed.
 8. Do not recommend unrelated examples, diagrams,
-   advantages, disadvantages, or extra explanations.
+    advantages, disadvantages, or extra explanations.
 9. If the response satisfies the prompt, return no weaknesses.
 10. Recommend improvements only for genuine problems.
 11. Distinguish response quality from prompt quality.
@@ -384,3 +391,204 @@ would be justified, not merely because the response is poor.
     result = DeeperWeaknessResult.model_validate(result_data)
 
     return result
+
+
+
+# ==========================================
+# PHASE 6A - PROMPT REFINEMENT
+# ==========================================
+
+def refine_prompt(prompt, response, deeper_result):
+
+    if not prompt or not prompt.strip():
+        raise ValueError("Prompt cannot be empty.")
+
+    if not response or not response.strip():
+        raise ValueError("Generated response cannot be empty.")
+
+    deeper_data = convert_to_dict(deeper_result)
+
+    if not deeper_data:
+        raise ValueError("Phase 5B analysis is required.")
+
+    # Do not refine when the prompt is already adequate
+    if not deeper_data.get("needs_refinement", False):
+        return {
+            "was_refined": False,
+            "original_prompt": prompt,
+            "refined_prompt": prompt,
+            "reason": "Phase 5B did not identify a need for prompt refinement."
+        }
+
+    client = Groq(api_key=os.environ["GROQ_API_KEY"])
+
+    system_instruction = """
+You are an expert prompt refinement specialist.
+
+Your task is to improve an existing user prompt using
+verified weakness analysis.
+
+STRICT RULES:
+
+1. Preserve the user's original intent.
+2. Address only genuine prompt weaknesses.
+3. Use the verified Phase 5B findings.
+4. Do not introduce unrelated requirements.
+5. Do not add examples unless the user requested them.
+6. Do not unnecessarily increase prompt length.
+7. Preserve requested output format and constraints.
+8. Do not change the subject or difficulty level.
+9. Never invent user preferences or missing context.
+10. If the prompt cannot be meaningfully improved,
+    return the original prompt unchanged.
+
+Return only valid JSON:
+
+{
+    "refined_prompt": "string",
+    "reason": "string"
+}
+"""
+
+    user_content = (
+        "ORIGINAL OR CLARIFIED PROMPT:\n"
+        f"{prompt}\n\n"
+        "PREVIOUS GENERATED RESPONSE:\n"
+        f"{response}\n\n"
+        "VERIFIED PHASE 5B ANALYSIS:\n"
+        f"{json.dumps(deeper_data, indent=2)}"
+    )
+
+    completion = client.chat.completions.create(
+        model="openai/gpt-oss-20b",
+        messages=[
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_content}
+        ],
+        temperature=0,
+        response_format={"type": "json_object"}
+    )
+
+    result_text = completion.choices[0].message.content
+
+    if not result_text:
+        raise ValueError("Groq returned an empty refinement result.")
+
+    result_data = json.loads(result_text)
+
+    refined_prompt = result_data.get("refined_prompt", "").strip()
+    reason = result_data.get("reason", "").strip()
+
+    if not refined_prompt:
+        raise ValueError("Groq returned an empty refined prompt.")
+
+    was_refined = refined_prompt != prompt.strip()
+
+    return {
+        "was_refined": was_refined,
+        "original_prompt": prompt,
+        "refined_prompt": refined_prompt,
+        "reason": reason
+    }
+
+
+# ==========================================
+# PHASE 6B - RESPONSE REGENERATION
+# ==========================================
+
+def regenerate_response(refinement_result):
+
+    if not isinstance(refinement_result, dict):
+        raise TypeError("Refinement result must be a dictionary.")
+
+    original_prompt = refinement_result.get("original_prompt", "")
+    refined_prompt = refinement_result.get("refined_prompt", "")
+    was_refined = refinement_result.get("was_refined", False)
+
+    # Skip regeneration when refinement is unnecessary
+    if not was_refined:
+        return {
+            "was_regenerated": False,
+            "original_prompt": original_prompt,
+            "refined_prompt": refined_prompt,
+            "new_response": None,
+            "reason": "Prompt refinement was not required."
+        }
+
+    if not refined_prompt or not refined_prompt.strip():
+        raise ValueError("Refined prompt cannot be empty.")
+
+    if refined_prompt.strip() == original_prompt.strip():
+        raise ValueError(
+            "Refined prompt is identical to the original prompt."
+        )
+
+    # Reuse the existing Groq response generator
+    new_response = generate_llm_response(refined_prompt)
+
+    if not new_response or not new_response.strip():
+        raise ValueError("LLM returned an empty response.")
+
+    return {
+        "was_regenerated": True,
+        "original_prompt": original_prompt,
+        "refined_prompt": refined_prompt,
+        "new_response": new_response,
+        "reason": "Successfully generated a response using the refined prompt."
+    }
+
+
+
+# ==========================================
+# PHASE 6C - RE-EVALUATE REFINED RESPONSE
+# ==========================================
+
+def reevaluate_refined_response(
+    regeneration_result,
+    reference_answer=None,
+    context=None
+):
+
+    if not isinstance(regeneration_result, dict):
+        raise TypeError("Regeneration result must be a dictionary.")
+
+    # Skip evaluation if no new response was generated
+    if not regeneration_result.get("was_regenerated", False):
+        return {
+            "was_reevaluated": False,
+            "evaluation_result": None,
+            "reason": "No regenerated response available for evaluation."
+        }
+
+    refined_prompt = regeneration_result.get("refined_prompt")
+    new_response = regeneration_result.get("new_response")
+
+    if not isinstance(refined_prompt, str) or not refined_prompt.strip():
+        raise ValueError("Refined prompt cannot be empty.")
+
+    if not isinstance(new_response, str) or not new_response.strip():
+        raise ValueError("Regenerated response cannot be empty.")
+
+    # Reuse the existing evaluation pipeline
+    evaluation = run_full_evaluation(
+        prompt=refined_prompt,
+        response=new_response,
+        reference_answer=reference_answer,
+        context=context
+    )
+
+    # Check whether evaluation engines returned errors
+    errors = evaluation.get("errors", {})
+
+    return {
+        "was_reevaluated": True,
+        "refined_prompt": refined_prompt,
+        "new_response": new_response,
+        "evaluation_result": evaluation,
+        "has_evaluation_errors": bool(errors),
+        "reason": (
+            "Re-evaluation completed with evaluator errors."
+            if errors
+            else "Re-evaluation completed successfully."
+        )
+    }

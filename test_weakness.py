@@ -1,6 +1,10 @@
 from weakness.analyzer import analyze_deeper_weaknesses
 from weakness.analyzer import analyze_weaknesses
 
+from weakness.analyzer import refine_prompt
+from weakness.analyzer import regenerate_response
+from weakness.analyzer import reevaluate_refined_response
+
 
 # =====================================
 # TEST 1: GOOD RESPONSE
@@ -365,3 +369,185 @@ assert unnecessary_5b_result.recommendations == []
 
 
 print("\nAll Phase 5B tests passed!")
+
+
+
+# ==========================================
+# PHASE 6A - TESTING
+# ==========================================
+
+# TEST 6: PROMPT DOES NOT NEED REFINEMENT
+
+result = refine_prompt(
+    prompt="What is RAG?",
+    response="RAG stands for Retrieval-Augmented Generation.",
+    deeper_result={
+        "needs_refinement": False,
+        "overall_status": "satisfactory",
+        "identified_weaknesses": [],
+        "missing_requirements": [],
+        "recommendations": []
+    }
+)
+
+print("\nTEST 6: NO REFINEMENT NEEDED")
+print(result)
+
+assert result["was_refined"] is False
+assert result["refined_prompt"] == "What is RAG?"
+
+
+# TEST 7: PROMPT REFINEMENT REQUIRED
+
+result = refine_prompt(
+    prompt="Explain Python for beginners.",
+    response="Python is a programming language.",
+    deeper_result={
+        "needs_refinement": True,
+        "overall_status": "needs_improvement",
+        "identified_weaknesses": [
+            "The prompt does not specify the intended scope."
+        ],
+        "missing_requirements": [],
+        "recommendations": [
+            "Clarify the intended scope without adding new topics."
+        ]
+    }
+)
+
+print("\nTEST 7: REFINEMENT REQUIRED")
+print(result)
+
+assert result["refined_prompt"].strip() != ""
+assert result["reason"].strip() != ""
+
+print("\nAll Phase 6A tests passed!")
+
+
+
+# ==========================================
+# PHASE 6B - TESTING
+# ==========================================
+
+# TEST 8: NO REGENERATION REQUIRED
+
+no_regeneration = regenerate_response({
+    "was_refined": False,
+    "original_prompt": "What is Python?",
+    "refined_prompt": "What is Python?",
+    "reason": "Prompt is already clear."
+})
+
+print("\nTEST 8: NO REGENERATION REQUIRED")
+print(no_regeneration)
+
+assert no_regeneration["was_regenerated"] is False
+assert no_regeneration["new_response"] is None
+
+
+# ==========================================
+# TEST 9: REGENERATE RESPONSE
+# ==========================================
+
+refinement_data = {
+    "was_refined": True,
+    "original_prompt": "Explain Python for beginners.",
+    "refined_prompt": (
+        "Explain Python for beginners, covering "
+        "essential concepts and basic syntax."
+    ),
+    "reason": "Clarified the intended scope."
+}
+
+regeneration_result = regenerate_response(refinement_data)
+
+print("\nTEST 9: REGENERATE RESPONSE")
+print("Was Regenerated:", regeneration_result["was_regenerated"])
+print("Original Prompt:", regeneration_result["original_prompt"])
+print("Refined Prompt:", regeneration_result["refined_prompt"])
+print("New Response:\n", regeneration_result["new_response"])
+
+assert regeneration_result["was_regenerated"] is True
+assert regeneration_result["new_response"] is not None
+assert regeneration_result["new_response"].strip() != ""
+
+print("\nAll Phase 6B tests passed!")
+
+
+
+
+# ==========================================
+# PHASE 6C - TESTING
+# ==========================================
+
+# TEST 10: NO RE-EVALUATION REQUIRED
+
+skipped_result = reevaluate_refined_response({
+    "was_regenerated": False,
+    "original_prompt": "What is Python?",
+    "refined_prompt": "What is Python?",
+    "new_response": None
+})
+
+print("\nTEST 10: NO RE-EVALUATION REQUIRED")
+print(skipped_result)
+
+assert skipped_result["was_reevaluated"] is False
+assert skipped_result["evaluation_result"] is None
+
+
+# ==========================================
+# TEST 11: RE-EVALUATE GENERATED RESPONSE
+# ==========================================
+
+# Reuse the actual result from Test 9
+reevaluation_result = reevaluate_refined_response(
+    regeneration_result
+)
+
+print("\nTEST 11: RE-EVALUATE GENERATED RESPONSE")
+
+print("Was Re-evaluated:", reevaluation_result["was_reevaluated"])
+
+print("Reason:", reevaluation_result["reason"])
+
+evaluation = reevaluation_result["evaluation_result"]
+
+print("\nCustom Judge Results:")
+
+custom = evaluation.get("custom_judge")
+
+if custom:
+    custom_data = (
+        custom.model_dump()
+        if hasattr(custom, "model_dump")
+        else custom
+    )
+
+    for metric in [
+        "accuracy",
+        "relevance",
+        "faithfulness",
+        "clarity",
+        "completeness"
+    ]:
+        print(
+            f"{metric.title()}: "
+            f"{custom_data[metric]['score']}/10"
+        )
+
+print("\nDeepEval Results:")
+
+for metric_name, details in evaluation.get("deepeval", {}).items():
+    print(
+        f"{metric_name}: "
+        f"{details['score_out_of_10']}/10"
+    )
+
+print("\nEvaluation Errors:")
+print(evaluation.get("errors", {}))
+
+assert reevaluation_result["was_reevaluated"] is True
+assert reevaluation_result["evaluation_result"] is not None
+
+print("\nAll Phase 6C execution tests passed!")

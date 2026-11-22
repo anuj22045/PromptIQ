@@ -8,12 +8,13 @@ from core.response_generator import generate_llm_response
 from evaluation.evaluation_service import run_full_evaluation
 
 
-from weakness.analyzer import(
+from weakness.analyzer import (
     analyze_weaknesses,
-    analyze_deeper_weaknesses
+    analyze_deeper_weaknesses,
+    refine_prompt,
+    regenerate_response,
+    reevaluate_refined_response
 )
-
-
 
 
 # ==========================================
@@ -43,7 +44,11 @@ defaults = {
     "supporting_context": "",
     "pipeline_error": None,
     "weakness_result":None,
-    "deeper_weakness_result":None
+    "deeper_weakness_result":None,
+    "refinement_result": None,
+    "regeneration_result": None,
+    "reevaluation_result": None,
+    "refinement_error": None
 }
 
 for key, value in defaults.items():
@@ -69,6 +74,10 @@ def generate_and_evaluate(
     st.session_state.pipeline_error = None
     st.session_state.weakness_result = None
     st.session_state.deeper_weakness_result = None
+    st.session_state.refinement_result = None
+    st.session_state.regeneration_result = None
+    st.session_state.reevaluation_result = None
+    st.session_state.refinement_error = None    
 
     st.session_state.result_original_prompt = original_prompt
     st.session_state.execution_prompt = execution_prompt
@@ -117,6 +126,75 @@ def generate_and_evaluate(
 
         st.session_state.pipeline_error = str(e)
 
+
+# ==========================================
+# PHASE 6 - PROMPT REFINEMENT PIPELINE
+# ==========================================
+
+def execute_refinement_pipeline():
+
+    st.session_state.refinement_error = None
+    st.session_state.refinement_result = None
+    st.session_state.regeneration_result = None
+    st.session_state.reevaluation_result = None
+
+    deeper_result = st.session_state.deeper_weakness_result
+
+    if deeper_result is None:
+        st.session_state.refinement_error = (
+            "Phase 5B analysis is not available."
+        )
+        return
+
+    if not deeper_result.needs_refinement:
+        return
+
+    try:
+        original_prompt = st.session_state.execution_prompt
+        original_response = st.session_state.generated_response
+
+        # PHASE 6A - REFINE PROMPT
+        with st.spinner("Phase 6A: Refining prompt..."):
+
+            refinement = refine_prompt(
+                prompt=original_prompt,
+                response=original_response,
+                deeper_result=deeper_result
+            )
+
+            st.session_state.refinement_result = refinement
+
+        # Stop if no meaningful refinement occurred
+        if not refinement["was_refined"]:
+            return
+
+        # PHASE 6B - REGENERATE RESPONSE
+        with st.spinner("Phase 6B: Regenerating response..."):
+
+            regeneration = regenerate_response(refinement)
+
+            st.session_state.regeneration_result = regeneration
+
+        if not regeneration["was_regenerated"]:
+            return
+
+        # PHASE 6C - RE-EVALUATE RESPONSE
+        with st.spinner("Phase 6C: Re-evaluating response..."):
+
+            reevaluation = reevaluate_refined_response(
+                regeneration_result=regeneration,
+                reference_answer=(
+                    st.session_state.reference_answer or None
+                ),
+                context=(
+                    st.session_state.supporting_context or None
+                )
+            )
+
+            st.session_state.reevaluation_result = reevaluation
+
+    except Exception as e:
+        st.session_state.refinement_error = str(e)
 
 # ==========================================
 # APPLICATION HEADER
@@ -276,7 +354,7 @@ if (
         # USER CLARIFICATION
         # ==================================
 
-        st.subheader("💬 Clarify Your Intent")
+        st.subheader(" Clarify Your Intent")
 
         st.info(
             ambiguity_result.clarification_question
@@ -389,7 +467,7 @@ if (
 
     st.divider()
 
-    st.header("🎯 Intent Resolution")
+    st.header(" Intent Resolution")
 
     st.success(
         f"Selected Intent: {clarification.selected_intent}"
@@ -417,7 +495,7 @@ if (
 
     st.divider()
 
-    st.header("📝 Generated Response")
+    st.header(" Generated Response")
 
     st.write("**Original User Prompt:**")
 
@@ -450,7 +528,7 @@ if (
 
     st.divider()
 
-    st.header("📊 Evaluation Dashboard")
+    st.header(" Evaluation Dashboard")
 
 
     # ======================================
@@ -613,7 +691,7 @@ if (
     # PHASE 5A - INITIAL ANALYSIS
     # =====================================
 
-    st.subheader("1. Initial Weakness Analysis")
+    st.subheader("	Potential Quality Issues")
 
     st.write("**Analysis Status:**", weakness.analysis_status)
 
@@ -658,7 +736,7 @@ if (
     # =====================================
 
     st.divider()
-    st.subheader("2. Deeper Weakness Analysis")
+    st.subheader("Deeper Weakness Analysis")
 
     if deeper is not None:
 
@@ -734,6 +812,155 @@ if (
         st.warning(
             "Deeper weakness analysis is not available."
         )
+
+
+
+# ==========================================
+# PHASE 6 - PROMPT OPTIMIZATION UI
+# ==========================================
+
+st.divider()
+st.subheader("Intelligent Prompt Optimization")
+
+deeper_result = st.session_state.deeper_weakness_result
+
+if deeper_result is None:
+
+    if st.session_state.weakness_result is None:
+        st.info("Run an evaluation to access prompt optimization.")
+    else:
+        st.info(
+            "No verified prompt refinement is available. "
+            "The original response has been preserved."
+        )
+
+elif not deeper_result.needs_refinement:
+
+    st.success(
+        "Phase 5B did not identify a need for prompt refinement."
+    )
+
+    st.info(
+        "PromptIQ will preserve the original prompt and response."
+    )
+
+else:
+
+    st.warning(
+        "Phase 5B identified a possible need for prompt refinement."
+    )
+
+    if st.button(
+        "Refine Prompt & Re-evaluate",
+        key="run_phase6",
+        type="primary"
+    ):
+        execute_refinement_pipeline()
+
+# ==========================================
+# DISPLAY PHASE 6 RESULTS
+# ==========================================
+
+if st.session_state.refinement_error:
+    st.error(st.session_state.refinement_error)
+
+refinement = st.session_state.refinement_result
+regeneration = st.session_state.regeneration_result
+reevaluation = st.session_state.reevaluation_result
+
+if refinement is not None:
+
+    st.markdown("### Optimized Prompt")
+
+    if refinement["was_refined"]:
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**Original Prompt**")
+            st.code(refinement["original_prompt"])
+
+        with col2:
+            st.markdown("**Refined Prompt**")
+            st.code(refinement["refined_prompt"])
+
+        st.markdown("**Refinement Reason**")
+        st.write(refinement["reason"])
+
+    else:
+        st.info(
+            "No meaningful prompt changes were generated."
+        )
+
+if regeneration is not None:
+
+    if regeneration["was_regenerated"]:
+
+        st.markdown("### Improved AI Response")
+
+        st.markdown(regeneration["new_response"])
+
+if reevaluation is not None:
+
+    if reevaluation["was_reevaluated"]:
+
+        st.markdown("### Optimized Response Evaluation")
+
+        evaluation = reevaluation["evaluation_result"]
+
+        if reevaluation["has_evaluation_errors"]:
+            st.warning(
+                "Some evaluation engines reported errors."
+            )
+            st.write(evaluation.get("errors", {}))
+        else:
+            st.success("Re-evaluation completed without reported errors.")
+
+        # Custom Judge results
+        st.markdown("#### Custom Judge Scores")
+
+        custom = evaluation.get("custom_judge")
+
+        if custom:
+
+            custom_data = (
+                custom.model_dump()
+                if hasattr(custom, "model_dump")
+                else custom
+            )
+
+            for metric in [
+                "accuracy",
+                "relevance",
+                "faithfulness",
+                "clarity",
+                "completeness"
+            ]:
+
+                details = custom_data.get(metric) or {}
+
+                score = details.get("score")
+
+                st.write(
+                    f"**{metric.title()}:** "
+                    f"{score}/10" if score is not None
+                    else f"**{metric.title()}:** N/A"
+                )
+
+        # DeepEval results
+        st.markdown("#### DeepEval Scores")
+
+        for metric_name, details in evaluation.get(
+            "deepeval", {}
+        ).items():
+
+            score = details.get("score_out_of_10")
+
+            st.write(
+                f"**{metric_name}:** "
+                f"{score}/10" if score is not None
+                else f"**{metric_name}:** N/A"
+            )
 
 # ==========================================
 # FOOTER

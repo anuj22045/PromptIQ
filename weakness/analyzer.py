@@ -19,6 +19,8 @@ load_dotenv()
 from weakness.schemas import DeeperWeaknessResult
 from core.response_generator import generate_llm_response
 
+from evaluation.evaluation_service import run_full_evaluation
+
 # ---------------------------------------
 # CONFIGURATION
 # ---------------------------------------
@@ -533,4 +535,60 @@ def regenerate_response(refinement_result):
         "refined_prompt": refined_prompt,
         "new_response": new_response,
         "reason": "Successfully generated a response using the refined prompt."
+    }
+
+
+
+# ==========================================
+# PHASE 6C - RE-EVALUATE REFINED RESPONSE
+# ==========================================
+
+def reevaluate_refined_response(
+    regeneration_result,
+    reference_answer=None,
+    context=None
+):
+
+    if not isinstance(regeneration_result, dict):
+        raise TypeError("Regeneration result must be a dictionary.")
+
+    # Skip evaluation if no new response was generated
+    if not regeneration_result.get("was_regenerated", False):
+        return {
+            "was_reevaluated": False,
+            "evaluation_result": None,
+            "reason": "No regenerated response available for evaluation."
+        }
+
+    refined_prompt = regeneration_result.get("refined_prompt")
+    new_response = regeneration_result.get("new_response")
+
+    if not isinstance(refined_prompt, str) or not refined_prompt.strip():
+        raise ValueError("Refined prompt cannot be empty.")
+
+    if not isinstance(new_response, str) or not new_response.strip():
+        raise ValueError("Regenerated response cannot be empty.")
+
+    # Reuse the existing evaluation pipeline
+    evaluation = run_full_evaluation(
+        prompt=refined_prompt,
+        response=new_response,
+        reference_answer=reference_answer,
+        context=context
+    )
+
+    # Check whether evaluation engines returned errors
+    errors = evaluation.get("errors", {})
+
+    return {
+        "was_reevaluated": True,
+        "refined_prompt": refined_prompt,
+        "new_response": new_response,
+        "evaluation_result": evaluation,
+        "has_evaluation_errors": bool(errors),
+        "reason": (
+            "Re-evaluation completed with evaluator errors."
+            if errors
+            else "Re-evaluation completed successfully."
+        )
     }

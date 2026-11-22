@@ -1,6 +1,7 @@
 from weakness.analyzer import analyze_deeper_weaknesses
 from weakness.analyzer import analyze_weaknesses
 
+from weakness.analyzer import refine_prompt
 
 # =====================================
 # TEST 1: GOOD RESPONSE
@@ -365,3 +366,56 @@ assert unnecessary_5b_result.recommendations == []
 
 
 print("\nAll Phase 5B tests passed!")
+
+
+
+# ==========================================
+# PHASE 6A - TESTING
+# ==========================================
+
+# TEST 6: PROMPT DOES NOT NEED REFINEMENT
+
+result = refine_prompt(
+    prompt="What is RAG?",
+    response="RAG stands for Retrieval-Augmented Generation.",
+    deeper_result={
+        "needs_refinement": False,
+        "overall_status": "satisfactory",
+        "identified_weaknesses": [],
+        "missing_requirements": [],
+        "recommendations": []
+    }
+)
+
+print("\nTEST 6: NO REFINEMENT NEEDED")
+print(result)
+
+assert result["was_refined"] is False
+assert result["refined_prompt"] == "What is RAG?"
+
+
+# TEST 7: PROMPT REFINEMENT REQUIRED
+
+result = refine_prompt(
+    prompt="Explain Python for beginners.",
+    response="Python is a programming language.",
+    deeper_result={
+        "needs_refinement": True,
+        "overall_status": "needs_improvement",
+        "identified_weaknesses": [
+            "The prompt does not specify the intended scope."
+        ],
+        "missing_requirements": [],
+        "recommendations": [
+            "Clarify the intended scope without adding new topics."
+        ]
+    }
+)
+
+print("\nTEST 7: REFINEMENT REQUIRED")
+print(result)
+
+assert result["refined_prompt"].strip() != ""
+assert result["reason"].strip() != ""
+
+print("\nAll Phase 6A tests passed!")

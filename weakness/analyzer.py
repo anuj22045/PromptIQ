@@ -1,4 +1,8 @@
 
+
+#we use two weakness analysis
+# Phase 5A: Detects potential weaknesses using evaluation scores and feedback.
+# Phase 5B: Verifies whether those weaknesses are actually valid based on the user's prompt and generated response.
 from weakness.schemas import (
     LowScoreFinding,
     MetricFeedback,
@@ -306,7 +310,7 @@ Follow these rules strictly:
 6. Do not invent additional requirements.
 7. Do not recommend making the response longer unless needed.
 8. Do not recommend unrelated examples, diagrams,
-   advantages, disadvantages, or extra explanations.
+    advantages, disadvantages, or extra explanations.
 9. If the response satisfies the prompt, return no weaknesses.
 10. Recommend improvements only for genuine problems.
 11. Distinguish response quality from prompt quality.
@@ -384,3 +388,102 @@ would be justified, not merely because the response is poor.
     result = DeeperWeaknessResult.model_validate(result_data)
 
     return result
+
+
+
+# ==========================================
+# PHASE 6A - PROMPT REFINEMENT
+# ==========================================
+
+def refine_prompt(prompt, response, deeper_result):
+
+    if not prompt or not prompt.strip():
+        raise ValueError("Prompt cannot be empty.")
+
+    if not response or not response.strip():
+        raise ValueError("Generated response cannot be empty.")
+
+    deeper_data = convert_to_dict(deeper_result)
+
+    if not deeper_data:
+        raise ValueError("Phase 5B analysis is required.")
+
+    # Do not refine when the prompt is already adequate
+    if not deeper_data.get("needs_refinement", False):
+        return {
+            "was_refined": False,
+            "original_prompt": prompt,
+            "refined_prompt": prompt,
+            "reason": "Phase 5B did not identify a need for prompt refinement."
+        }
+
+    client = Groq(api_key=os.environ["GROQ_API_KEY"])
+
+    system_instruction = """
+You are an expert prompt refinement specialist.
+
+Your task is to improve an existing user prompt using
+verified weakness analysis.
+
+STRICT RULES:
+
+1. Preserve the user's original intent.
+2. Address only genuine prompt weaknesses.
+3. Use the verified Phase 5B findings.
+4. Do not introduce unrelated requirements.
+5. Do not add examples unless the user requested them.
+6. Do not unnecessarily increase prompt length.
+7. Preserve requested output format and constraints.
+8. Do not change the subject or difficulty level.
+9. Never invent user preferences or missing context.
+10. If the prompt cannot be meaningfully improved,
+    return the original prompt unchanged.
+
+Return only valid JSON:
+
+{
+    "refined_prompt": "string",
+    "reason": "string"
+}
+"""
+
+    user_content = (
+        "ORIGINAL OR CLARIFIED PROMPT:\n"
+        f"{prompt}\n\n"
+        "PREVIOUS GENERATED RESPONSE:\n"
+        f"{response}\n\n"
+        "VERIFIED PHASE 5B ANALYSIS:\n"
+        f"{json.dumps(deeper_data, indent=2)}"
+    )
+
+    completion = client.chat.completions.create(
+        model="openai/gpt-oss-20b",
+        messages=[
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_content}
+        ],
+        temperature=0,
+        response_format={"type": "json_object"}
+    )
+
+    result_text = completion.choices[0].message.content
+
+    if not result_text:
+        raise ValueError("Groq returned an empty refinement result.")
+
+    result_data = json.loads(result_text)
+
+    refined_prompt = result_data.get("refined_prompt", "").strip()
+    reason = result_data.get("reason", "").strip()
+
+    if not refined_prompt:
+        raise ValueError("Groq returned an empty refined prompt.")
+
+    was_refined = refined_prompt != prompt.strip()
+
+    return {
+        "was_refined": was_refined,
+        "original_prompt": prompt,
+        "refined_prompt": refined_prompt,
+        "reason": reason
+    }

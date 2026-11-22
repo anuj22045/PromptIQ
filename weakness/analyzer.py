@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from weakness.schemas import DeeperWeaknessResult
+from core.response_generator import generate_llm_response
 
 # ---------------------------------------
 # CONFIGURATION
@@ -486,4 +487,50 @@ Return only valid JSON:
         "original_prompt": prompt,
         "refined_prompt": refined_prompt,
         "reason": reason
+    }
+
+
+# ==========================================
+# PHASE 6B - RESPONSE REGENERATION
+# ==========================================
+
+def regenerate_response(refinement_result):
+
+    if not isinstance(refinement_result, dict):
+        raise TypeError("Refinement result must be a dictionary.")
+
+    original_prompt = refinement_result.get("original_prompt", "")
+    refined_prompt = refinement_result.get("refined_prompt", "")
+    was_refined = refinement_result.get("was_refined", False)
+
+    # Skip regeneration when refinement is unnecessary
+    if not was_refined:
+        return {
+            "was_regenerated": False,
+            "original_prompt": original_prompt,
+            "refined_prompt": refined_prompt,
+            "new_response": None,
+            "reason": "Prompt refinement was not required."
+        }
+
+    if not refined_prompt or not refined_prompt.strip():
+        raise ValueError("Refined prompt cannot be empty.")
+
+    if refined_prompt.strip() == original_prompt.strip():
+        raise ValueError(
+            "Refined prompt is identical to the original prompt."
+        )
+
+    # Reuse the existing Groq response generator
+    new_response = generate_llm_response(refined_prompt)
+
+    if not new_response or not new_response.strip():
+        raise ValueError("LLM returned an empty response.")
+
+    return {
+        "was_regenerated": True,
+        "original_prompt": original_prompt,
+        "refined_prompt": refined_prompt,
+        "new_response": new_response,
+        "reason": "Successfully generated a response using the refined prompt."
     }

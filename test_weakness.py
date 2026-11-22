@@ -2,6 +2,8 @@ from weakness.analyzer import analyze_deeper_weaknesses
 from weakness.analyzer import analyze_weaknesses
 
 from weakness.analyzer import refine_prompt
+from weakness.analyzer import regenerate_response
+
 
 # =====================================
 # TEST 1: GOOD RESPONSE
@@ -419,3 +421,53 @@ assert result["refined_prompt"].strip() != ""
 assert result["reason"].strip() != ""
 
 print("\nAll Phase 6A tests passed!")
+
+
+
+# ==========================================
+# PHASE 6B - TESTING
+# ==========================================
+
+# TEST 8: NO REGENERATION REQUIRED
+
+no_regeneration = regenerate_response({
+    "was_refined": False,
+    "original_prompt": "What is Python?",
+    "refined_prompt": "What is Python?",
+    "reason": "Prompt is already clear."
+})
+
+print("\nTEST 8: NO REGENERATION REQUIRED")
+print(no_regeneration)
+
+assert no_regeneration["was_regenerated"] is False
+assert no_regeneration["new_response"] is None
+
+
+# ==========================================
+# TEST 9: REGENERATE RESPONSE
+# ==========================================
+
+refinement_data = {
+    "was_refined": True,
+    "original_prompt": "Explain Python for beginners.",
+    "refined_prompt": (
+        "Explain Python for beginners, covering "
+        "essential concepts and basic syntax."
+    ),
+    "reason": "Clarified the intended scope."
+}
+
+regeneration_result = regenerate_response(refinement_data)
+
+print("\nTEST 9: REGENERATE RESPONSE")
+print("Was Regenerated:", regeneration_result["was_regenerated"])
+print("Original Prompt:", regeneration_result["original_prompt"])
+print("Refined Prompt:", regeneration_result["refined_prompt"])
+print("New Response:\n", regeneration_result["new_response"])
+
+assert regeneration_result["was_regenerated"] is True
+assert regeneration_result["new_response"] is not None
+assert regeneration_result["new_response"].strip() != ""
+
+print("\nAll Phase 6B tests passed!")

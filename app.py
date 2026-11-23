@@ -837,7 +837,7 @@ if deeper_result is None:
 elif not deeper_result.needs_refinement:
 
     st.success(
-        "Phase 5B did not identify a need for prompt refinement."
+        "Your prompt meets the quality requirements, No optimization is currently recommended"
     )
 
     st.info(
@@ -847,7 +847,7 @@ elif not deeper_result.needs_refinement:
 else:
 
     st.warning(
-        "Phase 5B identified a possible need for prompt refinement."
+        "identified a possible need for prompt refinement."
     )
 
     if st.button(
@@ -961,6 +961,42 @@ if reevaluation is not None:
                 f"{score}/10" if score is not None
                 else f"**{metric_name}:** N/A"
             )
+
+
+# ==========================================
+# PHASE 7A - SIDE-BY-SIDE COMPARISON
+# ==========================================
+
+original_response = st.session_state.get("generated_response")
+regeneration = st.session_state.get("regeneration_result")
+
+if (
+    original_response
+    and isinstance(regeneration, dict)
+    and regeneration.get("was_regenerated")
+    and regeneration.get("new_response")
+):
+
+    st.divider()
+
+    st.subheader("Response Quality Comparison")
+
+    st.markdown("### Original vs Optimized Response")
+
+    col1, col2 = st.columns(2, gap="medium")
+
+    with col1:
+        st.markdown("#### Original AI Response")
+
+        with st.container(border=True, height=400):
+            st.markdown(original_response)
+
+    with col2:
+        st.markdown("#### Optimized AI Response")
+
+        with st.container(border=True, height=400):
+            st.markdown(regeneration["new_response"])
+
 
 # ==========================================
 # FOOTER

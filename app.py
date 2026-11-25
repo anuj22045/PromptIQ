@@ -398,7 +398,7 @@ if (
             # ==================================
 
             if st.button(
-                "✅ Confirm Intent & Generate Response",
+                "Confirm Intent & Generate Response",
                 type="primary"
             ):
 
@@ -962,10 +962,6 @@ if reevaluation is not None:
                 else f"**{metric_name}:** N/A"
             )
 
-
-# ==========================================
-# FOOTER
-# ==========================================
 
 st.divider()
 

@@ -964,41 +964,6 @@ if reevaluation is not None:
 
 
 # ==========================================
-# PHASE 7A - SIDE-BY-SIDE COMPARISON
-# ==========================================
-
-original_response = st.session_state.get("generated_response")
-regeneration = st.session_state.get("regeneration_result")
-
-if (
-    original_response
-    and isinstance(regeneration, dict)
-    and regeneration.get("was_regenerated")
-    and regeneration.get("new_response")
-):
-
-    st.divider()
-
-    st.subheader("Response Quality Comparison")
-
-    st.markdown("### Original vs Optimized Response")
-
-    col1, col2 = st.columns(2, gap="medium")
-
-    with col1:
-        st.markdown("#### Original AI Response")
-
-        with st.container(border=True, height=400):
-            st.markdown(original_response)
-
-    with col2:
-        st.markdown("#### Optimized AI Response")
-
-        with st.container(border=True, height=400):
-            st.markdown(regeneration["new_response"])
-
-
-# ==========================================
 # FOOTER
 # ==========================================
 

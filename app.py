@@ -398,7 +398,7 @@ if (
             # ==================================
 
             if st.button(
-                "✅ Confirm Intent & Generate Response",
+                "Confirm Intent & Generate Response",
                 type="primary"
             ):
 
@@ -837,7 +837,7 @@ if deeper_result is None:
 elif not deeper_result.needs_refinement:
 
     st.success(
-        "Phase 5B did not identify a need for prompt refinement."
+        "Your prompt meets the quality requirements, No optimization is currently recommended"
     )
 
     st.info(
@@ -847,7 +847,7 @@ elif not deeper_result.needs_refinement:
 else:
 
     st.warning(
-        "Phase 5B identified a possible need for prompt refinement."
+        "identified a possible need for prompt refinement."
     )
 
     if st.button(
@@ -962,9 +962,6 @@ if reevaluation is not None:
                 else f"**{metric_name}:** N/A"
             )
 
-# ==========================================
-# FOOTER
-# ==========================================
 
 st.divider()
 
